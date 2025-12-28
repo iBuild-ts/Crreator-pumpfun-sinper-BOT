@@ -100,6 +100,11 @@ class PumpFunExecutor:
             enable_fixed_fee=True,
             fixed_fee=cfg.get("priority_fee_lamports", 100_000)
         )
+        
+        # Jito Config
+        self.jito_url = cfg.get("jito_url", "https://mainnet.block-engine.jito.wtf/api/v1/bundles")
+        self.jito_tip_account = Pubkey.from_string(cfg.get("jito_tip_account", "Cw8CFyM9FxyqyVLnuNsduvYH9mB6z2is3iH5B4unfXG8"))
+        self.jito_tip_lamports = cfg.get("jito_tip_lamports", 0) # 0 means disabled
 
     async def close(self):
         await self.client.close()
@@ -243,6 +248,15 @@ class PumpFunExecutor:
         if sim.value.err is not None:
             raise Exception(f"Simulation failed: {sim.value.err}")
 
+        # If Jito is enabled, send as bundle
+        if self.jito_tip_lamports > 0:
+            logging.info(f"🚀 Sending via Jito Bundle (Tip: {self.jito_tip_lamports} lamports)")
+            bundle_id = await self.send_jito_bundle([tx])
+            if bundle_id:
+                return bundle_id
+            else:
+                logging.warning("Jito bundle failed, falling back to standard send")
+
         timeout_s = self.cfg.get("transaction_timeout_seconds", 60)
         max_retries = self.cfg.get("max_retries", 3)
 
@@ -267,6 +281,48 @@ class PumpFunExecutor:
                 await asyncio.sleep(1)
                 
         raise Exception(f"Tx failed or timed out: {last_err}")
+
+    async def send_jito_bundle(self, txs: List[Transaction]) -> Optional[str]:
+        """Send a list of transactions as a Jito bundle."""
+        if not self.jito_tip_lamports:
+            return None
+            
+        try:
+            # Add Jito tip to the last transaction
+            from solana.system_program import TransferParams, transfer as transfer_ix
+            tip_ix = transfer_ix(
+                TransferParams(
+                    from_pubkey=self.wallet.pubkey(),
+                    to_pubkey=self.jito_tip_account,
+                    lamports=self.jito_tip_lamports
+                )
+            )
+            txs[-1].add(tip_ix)
+            
+            # Re-sign the last transaction if it was already signed
+            # (In our case we sign right before sending usually)
+            
+            encoded_txs = [base58.b58encode(bytes(tx)).decode('ascii') for tx in txs]
+            
+            payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "sendBundle",
+                "params": [encoded_txs]
+            }
+            
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(self.jito_url, json=payload)
+                if resp.status_code == 200:
+                    result = resp.json().get("result")
+                    logging.info(f"🚀 Jito Bundle Sent! Result: {result}")
+                    return result
+                else:
+                    logging.error(f"Jito Bundle Error: {resp.status_code} - {resp.text}")
+                    return None
+        except Exception as e:
+            logging.error(f"Failed to send Jito bundle: {e}")
+            return None
 
 
 @retry(

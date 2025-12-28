@@ -15,6 +15,7 @@ from blockchain import (
     extract_token_data
 )
 from flow_filters import should_snipe_bitquery
+from db import database, get_creator_stats, get_token_analytics, trades as trades_table
 
 PUMP_FUN_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
 
@@ -108,6 +109,30 @@ async def should_snipe(executor: PumpFunExecutor, token_info: dict) -> bool:
     except Exception as e:
         logging.debug(f"Analytics API fallback: {e}")
 
+    # 2.5 Local Database Check (Creator Reputation & Rug Risk from worker)
+    try:
+        creator_data = await get_creator_stats(creator_address)
+        if creator_data:
+            score = creator_data.get("creator_score", 50.0)
+            if score < 30:
+                logging.info(f"Filter: {mint_address[:8]}... Low creator score {score:.1f}")
+                return False
+        
+        token_data = await get_token_analytics(mint_address)
+        if token_data:
+            risk = token_data.get("rug_risk", 100.0)
+            if risk > 70:
+                logging.info(f"Filter: {mint_address[:8]}... High rug risk {risk:.1f}%")
+                return False
+            
+            mc = token_data.get("market_cap_usd", 0.0)
+            min_mc = CONFIG.get("min_market_cap_usd", 5000.0)
+            if mc < min_mc:
+                logging.info(f"Filter: {mint_address[:8]}... Low MC ${mc:.0f}")
+                return False
+    except Exception as e:
+        logging.error(f"DB Filter Error: {e}")
+
     # 3. Fallback: SDK/Local Filters (If API is down or token is too new for API)
     state = await executor.get_bonding_curve_state(Pubkey.from_string(mint_address))
     if not state: return False
@@ -165,7 +190,23 @@ async def manage_position(executor: PumpFunExecutor, mint_address: str, creator_
         await asyncio.sleep(3)
         tx = await executor.client.get_transaction(sell_sig, commitment=Confirmed, max_supported_transaction_version=0)
         if tx.value and tx.value.transaction.meta:
-            stats_tracker.add_fee(tx.value.transaction.meta.fee)
+            fee = tx.value.transaction.meta.fee
+            stats_tracker.add_fee(fee)
+            
+            # Record sell trade in DB (simplistic pnl calculation)
+            try:
+                state = await executor.get_bonding_curve_state(mint_pubkey)
+                price = state.get_price_sol() * 100 if state else 0.0 # Estimate price in USD (SOL * 100)
+                await database.execute(trades_table.insert().values(
+                    mint=mint_address,
+                    side="sell",
+                    amount_sol=0.0, # Will be updated with actual amount if known
+                    amount_tokens=0.0,
+                    price_usd=price,
+                    tx_hash=sell_sig
+                ))
+            except Exception as e:
+                logging.error(f"Error recording trade: {e}")
     else:
         logging.error(f"❌ FAILED TO SELL: {mint_address}!")
 
@@ -183,6 +224,7 @@ async def sniper_main():
         global stats_tracker
         stats_tracker = TradingStats(sol_bal, CONFIG.get("fee_limit_percent", 0.02))
         
+        await database.connect()
         logging.info(f"🏁 SNIPER READY | Wallet: {wallet.pubkey()} | Bal: {sol_bal:.4f} SOL")
 
         token_queue = asyncio.Queue()
@@ -227,6 +269,19 @@ async def sniper_main():
                     
                     if buy_sig:
                         logging.info(f"✅ Snipe execution successful: {buy_sig}")
+                        # Record buy trade in DB
+                        try:
+                            await database.execute(trades_table.insert().values(
+                                mint=mint,
+                                side="buy",
+                                amount_sol=CONFIG["buy_amount_sol"],
+                                amount_tokens=0.0, # Estimate or fetch later
+                                price_usd=entry_price * 100, # Estimate
+                                tx_hash=buy_sig
+                            ))
+                        except Exception as e:
+                            logging.error(f"Error recording buy trade: {e}")
+                            
                         # Manage position
                         asyncio.create_task(manage_position(executor, mint, creator, entry_price))
                 except Exception as e:

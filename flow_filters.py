@@ -113,8 +113,14 @@ async def get_token_flow_metrics(api_key: str, mint: str) -> Optional[Dict[str, 
         return None
 
     meta = tokens[0]
-    flow["bondingCurveProgress"] = float(meta.get("BondingCurveProgressPercentage") or 0.0)
+    prog = float(meta.get("BondingCurveProgressPercentage") or 0.0)
+    flow["bondingCurveProgress"] = prog
     flow["hasGraduated"] = bool(meta.get("HasGraduated") or False)
+
+    # Estimate market cap: 100% progress ~ $60k-$100k USD
+    # Very rough estimate: (progress / 100) * 85 SOL * SOL_PRICE
+    # Assuming SOL price ~$100 for simplicity or fetching from meta if available
+    flow["marketCapUsd"] = (prog / 100.0) * 85.0 * 100.0 # Placeholder calculation
 
     return flow
 

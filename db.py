@@ -36,7 +36,22 @@ tokens = Table(
     Column("buy_volume_usd_5m", Float, default=0.0),
     Column("unique_sellers_5m", Integer, default=0),
     Column("rug_risk", Float, default=50.0),
+    Column("market_cap_usd", Float, default=0.0),
     Column("status", String, default="active"), # active, rugged, graduated
+)
+
+trades = Table(
+    "trades",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("mint", String, ForeignKey("tokens.mint")),
+    Column("side", String), # buy, sell
+    Column("amount_sol", Float),
+    Column("amount_tokens", Float),
+    Column("price_usd", Float),
+    Column("pnl_usd", Float, default=0.0),
+    Column("timestamp", DateTime, default=datetime.utcnow),
+    Column("tx_hash", String),
 )
 
 trades_stats = Table(

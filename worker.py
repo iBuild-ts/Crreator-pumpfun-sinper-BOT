@@ -63,6 +63,11 @@ async def calculate_rug_risk(mint: str, creator_address: str, metrics: dict):
     if sells > buys * 1.5 and buys > 0:
         risk += 20.0
         
+    # Market cap based risk
+    mc = metrics.get('marketCapUsd', 0.0)
+    if mc > 50000: # High MC tokens are generally safer from instant rug
+        risk -= 10.0
+        
     return max(0.0, min(100.0, risk))
 
 async def process_new_token(event: dict):
@@ -110,6 +115,7 @@ async def enrichment_loop(api_key: str):
                         buy_volume_usd_5m=metrics['buyVolume'],
                         unique_sellers_5m=metrics['uniqueSellers'],
                         rug_risk=risk,
+                        market_cap_usd=metrics.get('marketCapUsd', 0.0),
                         status=status
                     ))
                     
