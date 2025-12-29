@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from db import database, init_db, upsert_creator, add_token, tokens, creators, trades_stats
 from blockchain import monitor_new_tokens
 from flow_filters import get_token_flow_metrics
+from signals import get_token_signals
 
 # Configure Logging
 logging.basicConfig(
@@ -113,10 +114,18 @@ async def enrichment_loop(api_key: str):
                         has_graduated=metrics['has_graduated'],
                         unique_buyers_5m=metrics['uniqueBuyers'],
                         buy_volume_usd_5m=metrics['buyVolume'],
-                        unique_sellers_5m=metrics['uniqueSellers'],
+                        unique_sellers_5m=metrics['unique_sellers_5m'] if 'unique_sellers_5m' in metrics else metrics.get('uniqueSellers', 0),
                         rug_risk=risk,
                         market_cap_usd=metrics.get('marketCapUsd', 0.0),
                         status=status
+                    ))
+                    
+                    # Update Signals (Live status, Socials)
+                    sig_data = await get_token_signals(mint)
+                    await database.execute(tokens.update().where(tokens.c.mint == mint).values(
+                        has_live_stream=sig_data["has_live_stream"],
+                        twitter_link=sig_data["twitter"],
+                        telegram_link=sig_data["telegram"]
                     ))
                     
                     # Update Creator History

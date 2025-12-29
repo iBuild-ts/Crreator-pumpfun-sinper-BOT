@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -28,7 +29,7 @@
             color: var(--text);
             min-height: 100vh;
             padding: 2rem;
-            background-image: 
+            background-image:
                 radial-gradient(at 0% 0%, rgba(79, 172, 254, 0.15) 0px, transparent 50%),
                 radial-gradient(at 100% 100%, rgba(240, 147, 251, 0.1) 0px, transparent 50%);
         }
@@ -49,6 +50,7 @@
             font-size: 2.5rem;
             background: linear-gradient(to right, var(--primary), var(--secondary));
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
             font-weight: 600;
         }
@@ -108,10 +110,17 @@
             align-items: center;
         }
 
-        .trade-item:last-child { border-bottom: none; }
+        .trade-item:last-child {
+            border-bottom: none;
+        }
 
-        .side-buy { color: #10b981; }
-        .side-sell { color: #f43f5e; }
+        .side-buy {
+            color: #10b981;
+        }
+
+        .side-sell {
+            color: #f43f5e;
+        }
 
         .mint-addr {
             font-family: monospace;
@@ -122,12 +131,14 @@
         ::-webkit-scrollbar {
             width: 6px;
         }
+
         ::-webkit-scrollbar-thumb {
             background: rgba(255, 255, 255, 0.1);
             border-radius: 10px;
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <header>
@@ -178,7 +189,7 @@
             try {
                 const resp = await fetch(`${API_BASE}/stats`);
                 const data = await resp.json();
-                
+
                 document.getElementById('stat-pnl').textContent = `$${data.total_pnl_usd.toFixed(2)}`;
                 document.getElementById('stat-winrate').textContent = `${data.win_rate.toFixed(1)}%`;
                 document.getElementById('stat-trades').textContent = data.total_trades;
@@ -196,10 +207,16 @@
                 trades.forEach(t => {
                     const item = document.createElement('div');
                     item.className = 'trade-item';
+
+                    let signals = '';
+                    if (t.has_live_stream) signals += '<span title="Live Stream">🎥 </span>';
+                    if (t.twitter_link) signals += `<a href="${t.twitter_link}" target="_blank" title="Twitter">🐦</a> `;
+                    if (t.telegram_link) signals += `<a href="${t.telegram_link}" target="_blank" title="Telegram">✈️</a> `;
+
                     item.innerHTML = `
                         <div>
-                            <div class="side-${t.side}">${t.side.toUpperCase()}</div>
-                            <div class="mint-addr">${t.mint.substring(0,8)}...</div>
+                            <div class="side-${t.side}">${t.side.toUpperCase()} ${signals}</div>
+                            <div class="mint-addr">${t.mint.substring(0, 8)}...</div>
                         </div>
                         <div style="text-align: right">
                             <div>$${t.price_usd.toFixed(4)}</div>
@@ -216,7 +233,7 @@
         function updateChart(trades) {
             const ctx = document.getElementById('pnlChart').getContext('2d');
             const sells = trades.filter(t => t.side === 'sell').reverse();
-            
+
             let cumulative = 0;
             const data = sells.map(s => {
                 cumulative += s.price_usd; // Simple proxy for demonstration
@@ -225,7 +242,7 @@
             const labels = sells.map((_, i) => i + 1);
 
             if (pnlChart) pnlChart.destroy();
-            
+
             pnlChart = new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -259,4 +276,5 @@
         updateTrades();
     </script>
 </body>
+
 </html>

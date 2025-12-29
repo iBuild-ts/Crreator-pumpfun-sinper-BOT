@@ -14,7 +14,7 @@ from blockchain import (
     get_sol_balance, 
     extract_token_data
 )
-from flow_filters import should_snipe_bitquery
+from flow_filters import should_snipe_bitquery, should_snipe_signals
 from db import database, get_creator_stats, get_token_analytics, trades as trades_table
 
 PUMP_FUN_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
@@ -258,6 +258,11 @@ async def sniper_main():
                 try:
                     # Step 2: Bitquery Deep Filter (Optional/Slower)
                     if not await should_snipe_bitquery(mint, CONFIG):
+                        token_queue.task_done()
+                        continue
+                        
+                    # Step 3: Signals Filter (New)
+                    if not await should_snipe_signals(mint, CONFIG):
                         token_queue.task_done()
                         continue
 

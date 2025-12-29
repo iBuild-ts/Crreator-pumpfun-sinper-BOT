@@ -37,6 +37,9 @@ tokens = Table(
     Column("unique_sellers_5m", Integer, default=0),
     Column("rug_risk", Float, default=50.0),
     Column("market_cap_usd", Float, default=0.0),
+    Column("has_live_stream", Boolean, default=False),
+    Column("twitter_link", String, nullable=True),
+    Column("telegram_link", String, nullable=True),
     Column("status", String, default="active"), # active, rugged, graduated
 )
 

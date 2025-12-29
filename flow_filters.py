@@ -166,3 +166,22 @@ async def should_snipe_bitquery(mint: str, cfg: dict) -> bool:
         f"✅ BITQUERY APPROVED {mint[:8]}... | Prog: {prog:.1f}% | Buyers: {buys} | BuyVol: ${volume:.0f}"
     )
     return True
+
+async def should_snipe_signals(mint: str, cfg: dict) -> bool:
+    """Check for live streams and social signals."""
+    from signals import get_token_signals
+    
+    signals = await get_token_signals(mint)
+    
+    if cfg.get("require_live_stream", False) and not signals["has_live_stream"]:
+        logging.info(f"Filter: {mint[:8]}... no live stream (Rejected)")
+        return False
+        
+    if cfg.get("require_twitter", False) and not signals["twitter"]:
+        logging.info(f"Filter: {mint[:8]}... no Twitter link (Rejected)")
+        return False
+        
+    if signals["has_live_stream"]:
+        logging.info(f"✨ Signal: {mint[:8]}... Has active LIVE STREAM")
+        
+    return True

@@ -36,6 +36,9 @@ class TokenResponse(BaseModel):
     buy_volume_usd_5m: float
     rug_risk: float
     market_cap_usd: float
+    has_live_stream: bool
+    twitter_link: Optional[str] = None
+    telegram_link: Optional[str] = None
 
 class TradeResponse(BaseModel):
     id: int
