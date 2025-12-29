@@ -192,4 +192,14 @@ Check the logs in `trades.log` for detailed error messages. Each transaction is 
 
 ---
 
+## 🤝 Contributors
+
+Special thanks to **iBuild-ts** for the major contributions on Dec 27-28, 2025:
+- 🚀 Implemented Advanced Analytics & Database layer
+- 🎥 Integrated Live Stream & Social Signal detection
+- ⚡ Added Jito Bundle support for 0-block latency
+- 📊 Built the Premium Glassmorphic Performance Dashboard
+
+---
+
 **Remember:** Test on devnet first! Don't skip this step or you'll waste more SOL on mainnet.
