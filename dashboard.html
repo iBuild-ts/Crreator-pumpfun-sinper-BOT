@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PumpFun Sniper Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -162,8 +163,24 @@
                     style="padding: 0.5rem 1rem; font-size: 0.8rem; cursor: pointer; color: #facc15; border-color: #facc15;">
                     🧪 Simulation: OFF
                 </button>
+                🧪 Simulation: OFF
+                </button>
             </div>
         </header>
+
+        <!-- Stage 11: Pro Terminal Toggle -->
+        <div style="text-align: right; margin-bottom: 1rem;">
+            <button onclick="toggleProMode()" id="pro-mode-btn"
+                style="background: transparent; border: 1px solid var(--primary); color: var(--primary); padding: 0.5rem 1rem; cursor: pointer; border-radius: 8px;">
+                🖥️ Switch to PRO Terminal
+            </button>
+        </div>
+
+        <!-- PRO Chart Container (Hidden by default) -->
+        <div id="pro-chart-container" class="card" style="display: none; height: 500px; margin-bottom: 2rem;">
+            <div class="card-label">advanced_chart.tv</div>
+            <div id="tv-chart" style="width: 100%; height: 100%;"></div>
+        </div>
 
         <!-- Settings Panel (Hidden by default) -->
         <div id="settings-panel" class="card" style="display: none; margin-bottom: 2rem; border-color: var(--primary);">
@@ -457,6 +474,52 @@
                     }
                 });
             } catch (e) { console.error('Chart update failed', e); }
+        }
+
+        let tvChart;
+        let candleSeries;
+
+        function toggleProMode() {
+            const chartDiv = document.getElementById('pro-chart-container');
+            const btn = document.getElementById('pro-mode-btn');
+
+            if (chartDiv.style.display === 'none') {
+                chartDiv.style.display = 'block';
+                btn.textContent = '🔙 Standard View';
+                initTradingView();
+            } else {
+                chartDiv.style.display = 'none';
+                btn.textContent = '🖥️ Switch to PRO Terminal';
+            }
+        }
+
+        function initTradingView() {
+            if (tvChart) return;
+
+            const chartContainer = document.getElementById('tv-chart');
+            tvChart = LightweightCharts.createChart(chartContainer, {
+                layout: { background: { color: '#0f172a' }, textColor: '#DDD' },
+                grid: { vertLines: { color: '#334155' }, horzLines: { color: '#334155' } },
+                width: chartContainer.clientWidth,
+                height: 450,
+            });
+            candleSeries = tvChart.addCandlestickSeries({
+                upColor: '#10b981', downColor: '#ef4444', borderVisible: false, wickUpColor: '#10b981', wickDownColor: '#ef4444'
+            });
+
+            // Mock Data for Demo
+            const data = [];
+            let time = new Date().getTime() / 1000;
+            let value = 100;
+            for (let i = 0; i < 100; i++) {
+                const open = value;
+                const close = value + (Math.random() - 0.5) * 5;
+                const high = Math.max(open, close) + Math.random() * 2;
+                const low = Math.min(open, close) - Math.random() * 2;
+                data.push({ time: time + i * 60, open, high, low, close });
+                value = close;
+            }
+            candleSeries.setData(data);
         }
 
         async function updateWhaleData() {
