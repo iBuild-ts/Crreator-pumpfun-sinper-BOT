@@ -10,8 +10,9 @@ import json
 from typing import List, Dict, Optional
 from analytics_engine import get_market_heatmap
 from security import SecurityManager
-from fastapi import Security, Depends
+from fastapi import Security, Depends, Response
 from fastapi.security import APIKeyHeader
+from metrics import metrics as prom_metrics
 
 security_manager = SecurityManager()
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -235,6 +236,12 @@ async def get_heatmap():
     query = tokens.select().limit(50)
     token_rows = await database.fetch_all(query)
     return get_market_heatmap([dict(r) for r in token_rows])
+
+@app.get("/metrics")
+async def get_metrics():
+    """Prometheus Metrics Endpoint (Stage 14)."""
+    data, content_type = prom_metrics.generate_metrics()
+    return Response(content=data, media_type=content_type)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

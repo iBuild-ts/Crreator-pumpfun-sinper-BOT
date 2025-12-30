@@ -1,11 +1,14 @@
 # db.py
 import os
+from dotenv import load_dotenv
 from databases import Database
 from sqlalchemy import create_engine, MetaData, Table, Column, String, Integer, Float, Boolean, DateTime, ForeignKey
 from datetime import datetime
 
-# Default to SQLite for easy local setup, can be overridden by env var
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./analytics.db")
+load_dotenv()
+
+# Stage 14: Enterprise DB (Postgres support)
+DATABASE_URL = os.getenv("POSTGRES_URL", "sqlite:///./sniper.db")
 
 database = Database(DATABASE_URL)
 metadata = MetaData()
