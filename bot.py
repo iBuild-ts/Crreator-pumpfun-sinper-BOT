@@ -193,16 +193,30 @@ async def manage_position(executor: PumpFunExecutor, mint_address: str, creator_
             fee = tx.value.transaction.meta.fee
             stats_tracker.add_fee(fee)
             
-            # Record sell trade in DB (simplistic pnl calculation)
+            # Record sell trade in DB with improved PNL tracking
             try:
                 state = await executor.get_bonding_curve_state(mint_pubkey)
-                price = state.get_price_sol() * 100 if state else 0.0 # Estimate price in USD (SOL * 100)
+                price_sol = state.get_price_sol() if state else 0.0
+                price_usd = price_sol * 100 # Estimate
+                
+                # Fetch recent buy amount to calculate PNL
+                buy_query = trades_table.select().where(
+                    (trades_table.c.mint == mint_address) & (trades_table.c.side == "buy")
+                ).order_by(trades_table.c.timestamp.desc())
+                buy_row = await database.fetch_one(buy_query)
+                
+                pnl_usd = 0.0
+                if buy_row:
+                    entry_usd = buy_row['price_usd']
+                    pnl_usd = price_usd - entry_usd
+                
                 await database.execute(trades_table.insert().values(
                     mint=mint_address,
                     side="sell",
-                    amount_sol=0.0, # Will be updated with actual amount if known
+                    amount_sol=0.0, 
                     amount_tokens=0.0,
-                    price_usd=price,
+                    price_usd=price_usd,
+                    pnl_usd=pnl_usd,
                     tx_hash=sell_sig
                 ))
             except Exception as e:

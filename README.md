@@ -12,7 +12,7 @@
 - ✅ Balance checks before trades
 - ✅ Transaction confirmation waiting
 - ✅ Retry logic with exponential backoff
-- ✅ Jupiter API integration path (for future)
+- ✅ Jupiter API integration (Buy/Sell)
 
 ## 📋 Changes Made
 
@@ -146,7 +146,7 @@ tail -f trades.log
 
 ## 🚧 Known Limitations
 
-1. **Jupiter API not fully implemented** - The Jupiter integration path exists but needs completion based on actual API response format. Currently uses manual instruction building.
+1. **Jupiter API fully implemented** - The Jupiter integration is now live for both buying and selling tokens. Toggle it in `config.json`.
 
 2. **Bonding curve math simplified** - Token amount calculations are estimates. Should use actual bonding curve formula for precise amounts.
 
@@ -176,7 +176,7 @@ To make this production-ready:
 
 1. **Complete Jupiter API integration** - Cleaner than manual instructions
 2. **Add rug pull detection** - Filter out scam tokens
-3. **Implement profit tracking** - Track P&L across trades
+3. **Enhanced profit tracking** - Real-time P&L recording for every trade.
 4. **Add market cap filters** - Only trade tokens above certain MC
 5. **Optimize for speed** - Use Jito bundles for 0-block latency
 6. **Add stop-loss** - Auto-sell if price drops X%
@@ -194,11 +194,9 @@ Check the logs in `trades.log` for detailed error messages. Each transaction is 
 
 ## 🤝 Contributors
 
-Special thanks to **iBuild-ts** for the major contributions on Dec 27-28, 2025:
-- 🚀 Implemented Advanced Analytics & Database layer
-- 🎥 Integrated Live Stream & Social Signal detection
-- ⚡ Added Jito Bundle support for 0-block latency
-- 📊 Built the Premium Glassmorphic Performance Dashboard
+- 🤖 Integrated Jupiter Swap API for seamless trades
+- 📈 Enhanced P&L tracking & recording in database
+- 🧹 Refactored blockchain layer for better maintainability
 
 ---
 

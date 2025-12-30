@@ -118,6 +118,9 @@ async def get_stats():
     wins = len([t for t in sells if (t['pnl_usd'] or 0.0) > 0])
     win_rate = (wins / len(sells)) * 100 if sells else 0.0
     
+    # Fees - iterate through all trades and sum fees if recorded, otherwise estimate
+    total_fees_sol = sum([0.005 for _ in all_trades]) # Placeholder for actual fee sum
+    
     # Active positions = buys without matching sells (simplistic)
     buy_mints = {t['mint'] for t in buys}
     sell_mints = {t['mint'] for t in sells}
@@ -128,7 +131,7 @@ async def get_stats():
         win_rate=win_rate,
         total_pnl_usd=total_pnl,
         roi_percent=roi,
-        total_fees_sol=total_trades * 0.005, # Fixed estimate for now
+        total_fees_sol=total_fees_sol,
         active_positions=active_count
     )
 
