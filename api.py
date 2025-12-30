@@ -9,6 +9,23 @@ import os
 import json
 from typing import List, Dict, Optional
 from analytics_engine import get_market_heatmap
+from security import SecurityManager
+from fastapi import Security, Depends
+from fastapi.security import APIKeyHeader
+
+security_manager = SecurityManager()
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+async def verify_api_key(api_key: str = Security(api_key_header)):
+    """Dependency to verify API key (Stage 13)."""
+    # For now, we allow requests without key in DEV mode, or enforce it in PROD
+    # To enforce, uncomment the raise lines
+    if not api_key:
+        # raise HTTPException(status_code=403, detail="Missing API Key")
+        return True 
+    if not security_manager.verify_api_key(api_key):
+        raise HTTPException(status_code=403, detail="Invalid API Key")
+    return True
 
 app = FastAPI(
     title="PumpFun Analytics API",
@@ -183,7 +200,7 @@ async def get_config():
     with open("config.json", "r") as f:
         return json.load(f)
 
-@app.post("/config")
+@app.post("/config", dependencies=[Depends(verify_api_key)])
 async def update_config(new_config: Dict):
     """Update bot configuration."""
     try:

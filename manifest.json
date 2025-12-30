@@ -1,0 +1,15 @@
+{
+    "name": "PumpFun Sniper Pro",
+    "short_name": "Sniper Bot",
+    "start_url": "/dashboard.html",
+    "display": "standalone",
+    "background_color": "#0f172a",
+    "theme_color": "#0f172a",
+    "icons": [
+        {
+            "src": "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        }
+    ]
+}

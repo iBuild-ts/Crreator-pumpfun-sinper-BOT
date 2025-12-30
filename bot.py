@@ -24,7 +24,11 @@ from signals import get_token_metadata, analyze_token_sentiment
 from copy_trader import WalletMonitor
 from analytics_engine import TradeRetrospective
 from ml_engine import Oracle
+from ml_engine import Oracle
 from db import database, get_creator_stats, get_token_analytics, trades as trades_table
+from telegram import Update
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
+import os
 
 PUMP_FUN_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
 
@@ -51,26 +55,50 @@ console = logging.StreamHandler()
 console.setLevel(logging.INFO)
 logging.getLogger('').addHandler(console)
 
+# Global Telegram App
+tg_application = None
+
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🚀 PumpFun Sniper Bot Active! Use /status to check positions.")
+
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    status = f"🟢 Bot Active\n💰 Balance: N/A\n📈 Trades: N/A (TBD)"
+    await update.message.reply_text(status)
+
+async def pause_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Logic to toggle CONFIG["paused"]
+    CONFIG["paused"] = not CONFIG.get("paused", False)
+    state = "PAUSED 🔴" if CONFIG["paused"] else "RESUMED 🟢"
+    await update.message.reply_text(f"Bot is now {state}")
+
+async def init_telegram_bot():
+    """Initialize the interactive Telegram bot (Stage 13)."""
+    global tg_application
+    token = os.getenv("TELEGRAM_BOT_TOKEN") or CONFIG.get("telegram_bot_token")
+    if not token:
+        logging.warning("⚠️ Telegram Token missing. Interactive bot disabled.")
+        return
+
+    tg_application = ApplicationBuilder().token(token).build()
+    
+    tg_application.add_handler(CommandHandler("start", start_command))
+    tg_application.add_handler(CommandHandler("status", status_command))
+    tg_application.add_handler(CommandHandler("pause", pause_command))
+    
+    await tg_application.initialize()
+    await tg_application.start()
+    await tg_application.updater.start_polling()
+    logging.info("📱 Mobile Command: Telegram Bot Listening...")
+
 async def send_telegram_alert(message: str):
-    """Send trade notifications to Telegram."""
-    try:
-        # Re-read config for latest credentials
-        with open("config.json", "r") as f:
-            cfg = json.load(f)
-        bot_token = cfg.get("telegram_bot_token")
-        chat_id = cfg.get("telegram_chat_id")
-    except:
-        return
-        
-    if not bot_token or not chat_id:
-        return
-        
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    async with aiohttp.ClientSession() as session:
+    """Send alert via the interactive bot instance."""
+    global tg_application
+    chat_id = CONFIG.get("telegram_chat_id")
+    if tg_application and chat_id:
         try:
-            await session.post(url, json={"chat_id": chat_id, "text": message, "parse_mode": "Markdown"})
+            await tg_application.bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
         except Exception as e:
-            logging.error(f"Telegram Alert Failed: {e}")
+            logging.error(f"Telegram Send Failed: {e}")
 
 class TradingStats:
     def __init__(self, initial_capital: float, limit_pct: float):
@@ -402,6 +430,9 @@ async def sniper_main():
                 logging.info("🧠 Oracle: Daily auto-training triggered (simulated).")
         asyncio.create_task(training_loop())
         
+        # Stage 13: Initialize Interactive Telegram Bot
+        await init_telegram_bot()
+
         while True:
             candidate = await token_queue.get()
             
