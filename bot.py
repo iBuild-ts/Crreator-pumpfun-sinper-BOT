@@ -29,6 +29,7 @@ from db import database, get_creator_stats, get_token_analytics, trades as trade
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
 from geyser_client import GeyserStream
+from swarm import swarm
 import os
 
 PUMP_FUN_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
@@ -444,6 +445,17 @@ async def sniper_main():
 
         geyser = GeyserStream(callback=geyser_callback)
         asyncio.create_task(geyser.connect())
+        
+        # Stage 17: Swarm Intelligence
+        await swarm.connect()
+        async def swarm_handler(msg: dict):
+            if msg["type"] == "RUG_ALERT":
+                logging.warning(f"🚨 SWARM ALERT: Peer {msg['sender']} detected RUG on {msg['payload'].get('mint')}")
+                # Add to blacklist logic here
+            elif msg["type"] == "ALPHA_LAUNCH":
+                logging.info(f"💎 SWARM ALPHA: Peer detected moonshot {msg['payload'].get('mint')}")
+                
+        swarm.add_listener(swarm_handler)
 
         while True:
             candidate = await token_queue.get()
