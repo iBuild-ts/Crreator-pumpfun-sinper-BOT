@@ -8,6 +8,7 @@ import uvicorn
 import os
 import json
 from typing import List, Dict, Optional
+from analytics_engine import get_market_heatmap
 
 app = FastAPI(
     title="PumpFun Analytics API",
@@ -209,6 +210,14 @@ async def get_whale_activity(limit: int = 50):
     """Fetch recent trades made by tracked whales."""
     query = whale_activity.select().order_by(whale_activity.c.timestamp.desc()).limit(limit)
     return await database.fetch_all(query)
+
+@app.get("/heatmap")
+async def get_heatmap():
+    """Fetch real-time market sector performance (Stage 10)."""
+    # Fetch recent tokens from DB to analyze themes
+    query = tokens.select().limit(50)
+    token_rows = await database.fetch_all(query)
+    return get_market_heatmap([dict(r) for r in token_rows])
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

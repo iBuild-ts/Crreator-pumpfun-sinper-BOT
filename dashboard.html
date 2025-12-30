@@ -157,6 +157,11 @@
                 <div id="status-pill" class="card" style="padding: 0.5rem 1rem; font-size: 0.8rem;">
                     🟢 Bot Active
                 </div>
+                <!-- Stage 10: Simulation Mode Toggle -->
+                <button onclick="toggleSimulation()" id="sim-toggle-btn" class="card"
+                    style="padding: 0.5rem 1rem; font-size: 0.8rem; cursor: pointer; color: #facc15; border-color: #facc15;">
+                    🧪 Simulation: OFF
+                </button>
             </div>
         </header>
 
@@ -263,6 +268,14 @@
                 <div id="whale-activity-feed" class="trades-list" style="max-height: 300px;">
                     <!-- Recent Whale Activity -->
                 </div>
+            </div>
+        </div>
+
+        <!-- Stage 10: Market Heatmap -->
+        <div class="card" style="margin-top: 2rem; border-color: var(--accent);">
+            <div class="card-label">🔥 Market Sector Heatmap (Trending Themes)</div>
+            <div id="heatmap-container" style="display: flex; gap: 1rem; margin-top: 1rem; flex-wrap: wrap;">
+                <!-- Heatmap chips injected here -->
             </div>
         </div>
     </div>
@@ -452,7 +465,7 @@
                 const whales = await resp.json();
                 document.getElementById('stat-whale-count').textContent = `${whales.length} tracking`;
                 // Build simple list...
-                
+
                 const activityResp = await fetch(`${API_BASE}/whale-activity`);
                 const activity = await activityResp.json();
                 const feed = document.getElementById('whale-activity-feed');
@@ -461,13 +474,50 @@
                     const item = document.createElement('div');
                     item.className = 'trade-item';
                     item.innerHTML = `
-                        <div style="color: var(--accent)">🐋 ${a.wallet_address.substring(0,6)}...</div>
-                        <div>${a.side.toUpperCase()} ${a.mint.substring(0,8)}</div>
+                        <div style="color: var(--accent)">🐋 ${a.wallet_address.substring(0, 6)}...</div>
+                        <div>${a.side.toUpperCase()} ${a.mint.substring(0, 8)}</div>
                         <div style="color: #64748b">${new Date(a.timestamp).toLocaleTimeString()}</div>
                     `;
                     feed.appendChild(item);
                 });
             } catch (e) { console.error('Whale data fetch failed', e); }
+        }
+
+        async function updateHeatmap() {
+            try {
+                const resp = await fetch(`${API_BASE}/heatmap`);
+                const data = await resp.json();
+                const container = document.getElementById('heatmap-container');
+                container.innerHTML = '';
+                Object.entries(data).forEach(([sector, strength]) => {
+                    const chip = document.createElement('div');
+                    chip.className = 'card';
+                    chip.style.padding = '0.5rem 1rem';
+                    chip.style.fontSize = '0.8rem';
+                    chip.style.borderColor = `rgba(240, 147, 251, ${strength})`;
+                    chip.innerHTML = `${sector} <span style="color: var(--accent)">${(strength * 100).toFixed(0)}%</span>`;
+                    container.appendChild(chip);
+                });
+            } catch (e) { console.error('Heatmap fetch failed', e); }
+        }
+
+        async function toggleSimulation() {
+            try {
+                const currentResp = await fetch(`${API_BASE}/config`);
+                const cfg = await currentResp.json();
+                const newState = !cfg.simulation_mode;
+
+                await fetch(`${API_BASE}/config`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ simulation_mode: newState })
+                });
+
+                const btn = document.getElementById('sim-toggle-btn');
+                btn.textContent = `🧪 Simulation: ${newState ? 'ON' : 'OFF'}`;
+                btn.style.backgroundColor = newState ? 'rgba(250, 204, 21, 0.2)' : 'transparent';
+                alert(`Simulation mode ${newState ? 'ENABLED' : 'DISABLED'}. Reload bot to apply changes.`);
+            } catch (e) { console.error('Toggle simulation failed', e); }
         }
 
         setInterval(() => {
@@ -476,6 +526,7 @@
             updateLogs();
             updateChart();
             updateWhaleData();
+            updateHeatmap();
         }, 5000);
 
         updateStats();
@@ -483,6 +534,15 @@
         updateLogs();
         updateChart();
         updateWhaleData();
+        updateHeatmap();
+
+        // Initial sim state check
+        fetch(`${API_BASE}/config`).then(r => r.json()).then(cfg => {
+            const btn = document.getElementById('sim-toggle-btn');
+            const isOn = cfg.simulation_mode;
+            btn.textContent = `🧪 Simulation: ${isOn ? 'ON' : 'OFF'}`;
+            btn.style.backgroundColor = isOn ? 'rgba(250, 204, 21, 0.2)' : 'transparent';
+        });
     </script>
 </body>
 

@@ -22,6 +22,7 @@ from flow_filters import (
 )
 from signals import get_token_metadata, analyze_token_sentiment
 from copy_trader import WalletMonitor
+from analytics_engine import TradeRetrospective
 from db import database, get_creator_stats, get_token_analytics, trades as trades_table
 
 PUMP_FUN_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
@@ -381,6 +382,14 @@ async def sniper_main():
             executor
         )
         asyncio.create_task(whale_monitor.start_monitoring())
+        
+        # Stage 10: AI Feedback Loop
+        retrospective = TradeRetrospective(database)
+        async def tuning_loop():
+            while True:
+                await asyncio.sleep(3600) # Tune every hour
+                await retrospective.auto_tune_strategy()
+        asyncio.create_task(tuning_loop())
         
         while True:
             candidate = await token_queue.get()

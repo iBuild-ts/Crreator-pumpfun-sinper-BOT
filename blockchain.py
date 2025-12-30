@@ -138,6 +138,11 @@ class PumpFunExecutor:
                 self.additional_wallets.append(Keypair.from_base58_string(key_str))
             except:
                 logging.error(f"Failed to load additional wallet: {key_str[:10]}...")
+        
+        # Stage 10: Simulation Mode
+        self.simulation_mode = cfg.get("simulation_mode", False)
+        if self.simulation_mode:
+            logging.info("🔬 SIMULATION MODE ACTIVE: transactions will be logged but not sent.")
 
     def calculate_dynamic_jito_tip(self, progress: float) -> int:
         """Calculate dynamic Jito tip based on bonding curve progress."""
@@ -374,7 +379,11 @@ class PumpFunExecutor:
         return "multi_wallet_bundle_id"
 
     async def simulate_and_send(self, client: AsyncClient, tx: Transaction, signers: list[Keypair], tip_override: Optional[int] = None) -> str:
-        """Enforces Jito Bundling for MEV protection in Stage 6 & Auto-Failover (Stage 7)."""
+        """Enforces Jito Bundling for MEV protection in Stage 6 & Auto-Failover (Stage 7). Supports Simulation Mode (Stage 10)."""
+        if self.simulation_mode:
+            logging.info("🧪 [SIMULATION] Skipping actual network submission. Returning mock signature.")
+            return "sim_sig_" + os.urandom(4).hex()
+            
         # Ensure correct client is used
         active_client = await self.get_healthy_client()
         
@@ -494,6 +503,10 @@ class PumpFunExecutor:
             tx.fee_payer = self.wallet.pubkey()
             
             logging.info(f"💰 Skimming {amount_sol:.4f} SOL profit to {profit_wallet[:8]}...")
+            if self.simulation_mode:
+                logging.info(f"🧪 [SIMULATION] Skipping actual transaction for {mint_address[:8]}")
+                return "sim_signature_sell_67890"
+
             return await self.simulate_and_send(self.client, tx, [self.wallet])
         except Exception as e:
             logging.error(f"Profit transfer failed: {e}")
