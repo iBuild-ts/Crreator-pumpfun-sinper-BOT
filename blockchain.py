@@ -6,6 +6,7 @@ import logging
 import struct
 import base58
 import time
+import websockets
 from typing import Optional, Dict, Any, Callable, List
 from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
@@ -54,14 +55,28 @@ async def get_token_balance(client: AsyncClient, token_account: Pubkey) -> float
         logging.warning(f"Failed to get token balance: {e}")
         return 0.0
 
-async def get_sol_balance(client: AsyncClient, pubkey: Pubkey) -> float:
-    """Get SOL balance in SOL (not lamports)"""
-    try:
-        response = await client.get_balance(pubkey)
-        return response.value / 1_000_000_000  # Convert lamports to SOL
-    except Exception as e:
         logging.error(f"Failed to get SOL balance: {e}")
         return 0.0
+
+async def monitor_new_tokens(ws_endpoint: str, queue: asyncio.Queue, executor: 'PumpFunExecutor'):
+    """Monitor for new token creations on Pump.fun with auto-reconnect (Stage 7)."""
+    while True:
+        try:
+            async with websockets.connect(ws_endpoint) as ws:
+                logging.info("🎬 Connected to Pump.fun WebSocket")
+                payload = {
+                    "method": "subscribeNewToken",
+                }
+                await ws.send(json.dumps(payload))
+                
+                async for msg in ws:
+                    data = json.loads(msg)
+                    if data.get("txType") == "create":
+                        await queue.put(data)
+                        
+        except Exception as e:
+            logging.warning(f"WebSocket disconnected: {e}. Reconnecting in 5s...")
+            await asyncio.sleep(5)
 
 class BondingCurveState:
     """Wrapper for SDK's curve state for backward compatibility."""
@@ -88,6 +103,10 @@ class PumpFunExecutor:
         self.cfg = cfg
         self.wallet = wallet
         self.client = AsyncClient(rpc_endpoint, commitment=Confirmed)
+        
+        # Stage 7 Resilience: Backup RPC
+        self.backup_rpc = cfg.get("backup_rpc_endpoint")
+        self.backup_client = AsyncClient(self.backup_rpc, commitment=Confirmed) if self.backup_rpc else None
         
         # SDK components
         self.solana_client = SolanaClient(rpc_endpoint)
@@ -195,12 +214,8 @@ class PumpFunExecutor:
             )
             p_fee = await self.priority_fee_manager.calculate_priority_fee(priority_accounts)
 
-            # Add priority fee instructions
-            from solders.compute_budget import set_compute_unit_limit, set_compute_unit_price
-            all_ix = [
-                set_compute_unit_limit(100_000),
-                set_compute_unit_price(p_fee)
-            ] + instructions
+            # Add optimized compute budget instructions (Stage 7)
+            all_ix = self.get_compute_budget_ixs() + instructions
 
             tx = Transaction()
             tx.add(*all_ix)
@@ -274,11 +289,8 @@ class PumpFunExecutor:
             )
             p_fee = await self.priority_fee_manager.calculate_priority_fee(priority_accounts)
 
-            from solders.compute_budget import set_compute_unit_limit, set_compute_unit_price
-            all_ix = [
-                set_compute_unit_limit(100_000),
-                set_compute_unit_price(p_fee)
-            ] + instructions
+            # Add optimized compute budget instructions (Stage 7)
+            all_ix = self.get_compute_budget_ixs() + instructions
 
             tx = Transaction()
             tx.add(*all_ix)
@@ -362,8 +374,11 @@ class PumpFunExecutor:
         return "multi_wallet_bundle_id"
 
     async def simulate_and_send(self, client: AsyncClient, tx: Transaction, signers: list[Keypair], tip_override: Optional[int] = None) -> str:
-        """Enforces Jito Bundling for MEV protection in Stage 6."""
-        latest = await client.get_latest_blockhash()
+        """Enforces Jito Bundling for MEV protection in Stage 6 & Auto-Failover (Stage 7)."""
+        # Ensure correct client is used
+        active_client = await self.get_healthy_client()
+        
+        latest = await active_client.get_latest_blockhash()
         tx.recent_blockhash = latest.value.blockhash
         tx.sign(*signers)
 
@@ -380,10 +395,10 @@ class PumpFunExecutor:
         if self.cfg.get("allow_mev_fallback", True):
             logging.warning("⚠️ Jito routing failed or disabled. Sending via standard RPC (MEV Risk!)")
             # Simulation
-            sim = await client.simulate_transaction(tx)
+            sim = await active_client.simulate_transaction(tx)
             if sim.value.err:
                 raise Exception(f"Simulation failed: {sim.value.err}")
-            return await client.send_transaction(tx, *signers)
+            return await active_client.send_transaction(tx, *signers)
         else:
             raise Exception("Anti-MEV Enforcement: Jito bundle failed and fallback is disabled.")
 
@@ -483,6 +498,29 @@ class PumpFunExecutor:
         except Exception as e:
             logging.error(f"Profit transfer failed: {e}")
             return None
+
+    async def get_healthy_client(self) -> AsyncClient:
+        """Returns the healthiest client (Stage 7 Resilience)."""
+        if not self.backup_client:
+            return self.client
+            
+        try:
+            # Simple health check: get slot with small timeout
+            await asyncio.wait_for(self.client.get_slot(), timeout=1.0)
+            return self.client
+        except:
+            logging.warning("⚠️ Primary RPC unresponsive. Switching to backup...")
+            return self.backup_client
+
+    def get_compute_budget_ixs(self) -> List[Instruction]:
+        """Generate compute budget instructions for low-latency trades."""
+        micro_lamports = self.cfg.get("priority_fee_lamports", 100_000)
+        from solana.compute_budget import set_compute_unit_limit, set_compute_unit_price
+        
+        return [
+            set_compute_unit_limit(200_000), # Most Pump.fun swaps are well under 200k
+            set_compute_unit_price(micro_lamports)
+        ]
 
 
 # Consolidated logic into PumpFunExecutor. Standalone helper functions removed.

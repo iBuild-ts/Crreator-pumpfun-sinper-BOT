@@ -327,9 +327,20 @@ async def manage_position(executor: PumpFunExecutor, mint_address: str, creator_
                     await executor.transfer_profits(skim_amt)
             except Exception as e:
                 logging.error(f"Error recording trade: {e}")
-    else:
-        logging.error(f"❌ FAILED TO SELL: {mint_address}!")
-        await send_telegram_alert(f"❌ *SELL FAILED* for `{mint_address[:8]}`!")
+async def recover_active_positions(executor: PumpFunExecutor):
+    """Recover and resume management of active trades from DB (Stage 7)."""
+    try:
+        # Find all buys that don't have a matching sell
+        query = "SELECT DISTINCT mint, price_usd FROM trades WHERE side='buy' AND mint NOT IN (SELECT mint FROM trades WHERE side='sell')"
+        active_buys = await database.fetch_all(query)
+        
+        for row in active_buys:
+            mint = row['mint']
+            entry_price = row['price_usd'] / 100 # Back to SOL approx
+            logging.info(f"🔄 Recovering active position for {mint}...")
+            asyncio.create_task(manage_position(executor, mint, "RECOVERED", entry_price))
+    except Exception as e:
+        logging.error(f"State recovery failed: {e}")
 
 async def sniper_main():
     """Main lifecycle for the sniper bot."""
@@ -347,6 +358,9 @@ async def sniper_main():
         
         await database.connect()
         logging.info(f"🏁 SNIPER READY | Wallet: {wallet.pubkey()} | Bal: {sol_bal:.4f} SOL")
+
+        # Stage 7: State Recovery
+        await recover_active_positions(executor)
 
         token_queue = asyncio.Queue()
         
