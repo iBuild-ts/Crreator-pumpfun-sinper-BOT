@@ -108,6 +108,14 @@ class PumpFunExecutor:
         self.jito_url = cfg.get("jito_url", "https://mainnet.block-engine.jito.wtf/api/v1/bundles")
         self.jito_tip_account = Pubkey.from_string(cfg.get("jito_tip_account", "Cw8CFyM9FxyqyVLnuNsduvYH9mB6z2is3iH5B4unfXG8"))
         self.jito_tip_lamports = cfg.get("jito_tip_lamports", 0) # 0 means disabled
+
+    def calculate_dynamic_jito_tip(self, progress: float) -> int:
+        """Calculate dynamic Jito tip based on bonding curve progress."""
+        if not self.jito_tip_lamports:
+            return 0
+        # Scaling: 10% progress -> base tip, 80% progress -> 2x base tip
+        scale = 1.0 + (min(progress, 100.0) / 100.0)
+        return int(self.jito_tip_lamports * scale)
         
         # Jupiter Config
         self.use_jupiter = cfg.get("use_jupiter", False)
@@ -142,7 +150,7 @@ class PumpFunExecutor:
             logging.warning(f"Failed to fetch density: {e}")
             return 0
 
-    async def buy_token(self, mint_address: str, creator_address: str, amount_sol: float) -> Optional[str]:
+    async def buy_token(self, mint_address: str, creator_address: str, amount_sol: float, tip: Optional[int] = None) -> Optional[str]:
         """Buy a Pump.fun token using either SDK or Jupiter API."""
         if self.use_jupiter:
             return await self.buy_token_jupiter(mint_address, amount_sol)
@@ -189,7 +197,7 @@ class PumpFunExecutor:
             tx.add(*all_ix)
             tx.fee_payer = self.wallet.pubkey()
             
-            return await self.simulate_and_send(self.client, tx, [self.wallet])
+            return await self.simulate_and_send(self.client, tx, [self.wallet], tip_override=tip)
         except Exception as e:
             logging.error(f"SDK Buy failed: {e}")
             return None
@@ -217,7 +225,7 @@ class PumpFunExecutor:
             logging.error(f"Jupiter Buy failed: {e}")
             return None
 
-    async def sell_token(self, mint_address: str, creator_address: str, amount_tokens: float = None) -> Optional[str]:
+    async def sell_token(self, mint_address: str, creator_address: str, amount_tokens: float = None, tip: Optional[int] = None) -> Optional[str]:
         """Sell Pump.fun tokens for given mint."""
         if self.use_jupiter:
             return await self.sell_token_jupiter(mint_address, amount_tokens)
@@ -267,7 +275,7 @@ class PumpFunExecutor:
             tx.add(*all_ix)
             tx.fee_payer = self.wallet.pubkey()
             
-            return await self.simulate_and_send(self.client, tx, [self.wallet])
+            return await self.simulate_and_send(self.client, tx, [self.wallet], tip_override=tip)
         except Exception as e:
             logging.error(f"SDK Sell failed: {e}")
             return None
@@ -313,7 +321,7 @@ class PumpFunExecutor:
             response.raise_for_status()
             return response.json()
 
-    async def simulate_and_send(self, client: AsyncClient, tx: Transaction, signers: list[Keypair]) -> str:
+    async def simulate_and_send(self, client: AsyncClient, tx: Transaction, signers: list[Keypair], tip_override: Optional[int] = None) -> str:
         """Centralized simulation + send with polling."""
         # Set recent blockhash and sign
         latest = await client.get_latest_blockhash()
@@ -330,9 +338,10 @@ class PumpFunExecutor:
             raise Exception(f"Simulation failed: {sim.value.err}")
 
         # If Jito is enabled, send as bundle
-        if self.jito_tip_lamports > 0:
-            logging.info(f"🚀 Sending via Jito Bundle (Tip: {self.jito_tip_lamports} lamports)")
-            bundle_id = await self.send_jito_bundle([tx])
+        tip = tip_override if tip_override is not None else self.jito_tip_lamports
+        if tip > 0:
+            logging.info(f"🚀 Sending via Jito Bundle (Tip: {tip} lamports)")
+            bundle_id = await self.send_jito_bundle([tx], tip_override=tip)
             if bundle_id:
                 return bundle_id
             else:
@@ -367,9 +376,10 @@ class PumpFunExecutor:
                 
         raise Exception(f"Tx failed or timed out: {last_err}")
 
-    async def send_jito_bundle(self, txs: List[Transaction]) -> Optional[str]:
+    async def send_jito_bundle(self, txs: List[Transaction], tip_override: Optional[int] = None) -> Optional[str]:
         """Send a list of transactions as a Jito bundle."""
-        if not self.jito_tip_lamports:
+        tip_lamports = tip_override if tip_override is not None else self.jito_tip_lamports
+        if not tip_lamports:
             return None
             
         try:
@@ -379,7 +389,7 @@ class PumpFunExecutor:
                 TransferParams(
                     from_pubkey=self.wallet.pubkey(),
                     to_pubkey=self.jito_tip_account,
-                    lamports=self.jito_tip_lamports
+                    lamports=tip_lamports
                 )
             )
             txs[-1].add(tip_ix)

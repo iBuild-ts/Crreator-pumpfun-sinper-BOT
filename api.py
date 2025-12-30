@@ -5,7 +5,9 @@ from db import database, tokens, creators, trades
 from datetime import datetime, timedelta
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
-from typing import List, Dict
+import os
+import json
+from typing import List, Dict, Optional
 
 app = FastAPI(
     title="PumpFun Analytics API",
@@ -138,6 +140,45 @@ async def get_stats():
 @app.get("/health")
 async def health():
     return {"status": "ok", "db": database.is_connected}
+
+@app.get("/logs")
+async def get_logs():
+    """Return the last 20 lines from the trade log."""
+    log_file = "sniper_trades.log"
+    if not os.path.exists(log_file):
+        return {"logs": []}
+        
+    try:
+        with open(log_file, "r") as f:
+            # Read all lines and take last 20
+            lines = f.readlines()
+            return {"logs": lines[-20:]}
+    except Exception as e:
+        return {"logs": [f"Error reading logs: {e}"]}
+
+@app.get("/config")
+async def get_config():
+    """Fetch current bot configuration."""
+    if not os.path.exists("config.json"):
+        return {}
+    with open("config.json", "r") as f:
+        return json.load(f)
+
+@app.post("/config")
+async def update_config(new_config: Dict):
+    """Update bot configuration."""
+    try:
+        current_config = {}
+        if os.path.exists("config.json"):
+            with open("config.json", "r") as f:
+                current_config = json.load(f)
+        
+        current_config.update(new_config)
+        with open("config.json", "w") as f:
+            json.dump(current_config, f, indent=4)
+        return {"status": "success", "config": current_config}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -89,7 +89,7 @@
 
         .main-grid {
             display: grid;
-            grid-template-columns: 2fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr;
             gap: 1.5rem;
         }
 
@@ -128,13 +128,19 @@
             font-size: 0.8rem;
         }
 
-        ::-webkit-scrollbar {
-            width: 6px;
+        .log-entries {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.75rem;
+            color: #94a3b8;
+            max-height: 500px;
+            overflow-y: auto;
         }
 
-        ::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 10px;
+        .log-entry {
+            margin-bottom: 0.25rem;
+            white-space: pre-wrap;
+            border-left: 2px solid var(--primary);
+            padding-left: 0.5rem;
         }
     </style>
 </head>
@@ -143,10 +149,49 @@
     <div class="container">
         <header>
             <h1>Sniper Hub</h1>
-            <div id="status-pill" class="card" style="padding: 0.5rem 1rem; font-size: 0.8rem;">
-                🟢 Bot Active
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <button onclick="toggleSettings()" class="card"
+                    style="padding: 0.5rem 1rem; font-size: 0.8rem; cursor: pointer; background: var(--card-bg);">
+                    ⚙️ Settings
+                </button>
+                <div id="status-pill" class="card" style="padding: 0.5rem 1rem; font-size: 0.8rem;">
+                    🟢 Bot Active
+                </div>
             </div>
         </header>
+
+        <!-- Settings Panel (Hidden by default) -->
+        <div id="settings-panel" class="card" style="display: none; margin-bottom: 2rem; border-color: var(--primary);">
+            <div class="card-label" style="display: flex; justify-content: space-between; align-items: center;">
+                <span>Global Settings</span>
+                <button onclick="saveSettings()"
+                    style="background: var(--primary); color: #000; border: none; padding: 0.3rem 1rem; border-radius: 10px; cursor: pointer; font-weight: 600;">Save
+                    Changes</button>
+            </div>
+            <div
+                style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem;">
+                <div>
+                    <label style="display: block; font-size: 0.75rem; color: #94a3b8;">Buy Amount (SOL)</label>
+                    <input type="number" id="cfg-buy-amount" step="0.01"
+                        style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; padding: 0.5rem; border-radius: 8px;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.75rem; color: #94a3b8;">Slippage (BPS)</label>
+                    <input type="number" id="cfg-slippage"
+                        style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; padding: 0.5rem; border-radius: 8px;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.75rem; color: #94a3b8;">Take Profit (%)</label>
+                    <input type="number" id="cfg-tp"
+                        style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; padding: 0.5rem; border-radius: 8px;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.75rem; color: #94a3b8;">Stop Loss (%)</label>
+                    <input type="number" id="cfg-sl"
+                        style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; padding: 0.5rem; border-radius: 8px;">
+                </div>
+            </div>
+        </div>
 
         <div class="stats-grid">
             <div class="card">
@@ -173,9 +218,15 @@
                 <canvas id="pnlChart"></canvas>
             </div>
             <div class="card trades-list">
-                <div class="card-label">Recent Trades</div>
+                <div class="card-label">Recent History</div>
                 <div id="trades-container">
                     <!-- Trades injected here -->
+                </div>
+            </div>
+            <div class="card logs-list">
+                <div class="card-label">Live Activity</div>
+                <div id="logs-container" class="log-entries">
+                    <!-- Logs injected here -->
                 </div>
             </div>
         </div>
@@ -267,13 +318,66 @@
             });
         }
 
+        async function updateLogs() {
+            try {
+                const resp = await fetch(`${API_BASE}/logs`);
+                const data = await resp.json();
+                const container = document.getElementById('logs-container');
+                container.innerHTML = '';
+                
+                data.logs.forEach(log => {
+                    const entry = document.createElement('div');
+                    entry.className = 'log-entry';
+                    entry.textContent = log.trim();
+                    container.appendChild(entry);
+                });
+                container.scrollTop = container.scrollHeight;
+            } catch (e) { console.error('Logs fetch failed', e); }
+        }
+
+        function toggleSettings() {
+            const panel = document.getElementById('settings-panel');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+            if (panel.style.display === 'block') loadSettings();
+        }
+
+        async function loadSettings() {
+            try {
+                const resp = await fetch(`${API_BASE}/config`);
+                const cfg = await resp.json();
+                document.getElementById('cfg-buy-amount').value = cfg.buy_amount_sol;
+                document.getElementById('cfg-slippage').value = cfg.max_slippage_bps;
+                document.getElementById('cfg-tp').value = cfg.take_profit_percent;
+                document.getElementById('cfg-sl').value = cfg.stop_loss_percent;
+            } catch (e) { console.error('Load settings failed', e); }
+        }
+
+        async function saveSettings() {
+            const data = {
+                buy_amount_sol: parseFloat(document.getElementById('cfg-buy-amount').value),
+                max_slippage_bps: parseInt(document.getElementById('cfg-slippage').value),
+                take_profit_percent: parseFloat(document.getElementById('cfg-tp').value),
+                stop_loss_percent: parseFloat(document.getElementById('cfg-sl').value)
+            };
+            try {
+                const resp = await fetch(`${API_BASE}/config`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                if (resp.ok) alert('Settings saved successfully!');
+            } catch (e) { console.error('Save settings failed', e); }
+        }
+
         setInterval(() => {
             updateStats();
             updateTrades();
+            updateLogs();
         }, 5000);
 
         updateStats();
         updateTrades();
+        updateLogs();
     </script>
 </body>
 

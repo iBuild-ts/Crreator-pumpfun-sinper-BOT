@@ -14,7 +14,11 @@ from blockchain import (
     get_sol_balance, 
     extract_token_data
 )
-from flow_filters import should_snipe_bitquery, should_snipe_signals
+from flow_filters import (
+    should_snipe_bitquery, 
+    should_snipe_signals, 
+    check_holder_concentration
+)
 from db import database, get_creator_stats, get_token_analytics, trades as trades_table
 
 PUMP_FUN_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
@@ -41,6 +45,27 @@ logging.basicConfig(
 console = logging.StreamHandler()
 console.setLevel(logging.INFO)
 logging.getLogger('').addHandler(console)
+
+async def send_telegram_alert(message: str):
+    """Send trade notifications to Telegram."""
+    try:
+        # Re-read config for latest credentials
+        with open("config.json", "r") as f:
+            cfg = json.load(f)
+        bot_token = cfg.get("telegram_bot_token")
+        chat_id = cfg.get("telegram_chat_id")
+    except:
+        return
+        
+    if not bot_token or not chat_id:
+        return
+        
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    async with aiohttp.ClientSession() as session:
+        try:
+            await session.post(url, json={"chat_id": chat_id, "text": message, "parse_mode": "Markdown"})
+        except Exception as e:
+            logging.error(f"Telegram Alert Failed: {e}")
 
 class TradingStats:
     def __init__(self, initial_capital: float, limit_pct: float):
@@ -114,9 +139,16 @@ async def should_snipe(executor: PumpFunExecutor, token_info: dict) -> bool:
         creator_data = await get_creator_stats(creator_address)
         if creator_data:
             score = creator_data.get("creator_score", 50.0)
-            if score < 30:
-                logging.info(f"Filter: {mint_address[:8]}... Low creator score {score:.1f}")
+            graduated = creator_data.get("graduated_count", 0)
+            rugs = creator_data.get("rug_count", 0)
+            
+            if score < 30 or rugs > 0:
+                logging.info(f"Filter: {mint_address[:8]}... bad reputation score {score:.1f} | Rugs: {rugs}")
                 return False
+            
+            if graduated >= 2:
+                logging.info(f"🌟 TOP CREATOR detected: {creator_address[:8]}... (Graduated: {graduated})")
+                # Pre-approve or lower other thresholds if needed
         
         token_data = await get_token_analytics(mint_address)
         if token_data:
@@ -147,7 +179,11 @@ async def should_snipe(executor: PumpFunExecutor, token_info: dict) -> bool:
         logging.info(f"Filter: {mint_address[:8]}... density {density} (Rejected)")
         return False
             
-    logging.info(f"🛡️ SDK FALLBACK APPROVED: {mint_address[:8]} | Progress: {progress:.1f}% | Density: {density}")
+    # 4. Holder Concentration Filter (New)
+    if not await check_holder_concentration(mint_address, executor.rpc_endpoint, CONFIG.get("max_concentration_pct", 25.0)):
+        return False
+            
+    logging.info(f"🛡️ SNIPE APPROVED: {mint_address[:8]} | Progress: {progress:.1f}% | Density: {density}")
     return True
 
 async def manage_position(executor: PumpFunExecutor, mint_address: str, creator_address: str, entry_price: float):
@@ -155,18 +191,57 @@ async def manage_position(executor: PumpFunExecutor, mint_address: str, creator_
     logging.info(f"🛰️ Monitoring position: {mint_address} (Entry: {entry_price:.8f} SOL)")
     mint_pubkey = Pubkey.from_string(mint_address)
     
+    peak_price = entry_price
+    
     while True:
         try:
+            # Refresh config partially (simulated for simplicity, or we could re-read file)
+            # In a real bot, we might use a watcher or a shared state
+            
             state = await executor.get_bonding_curve_state(mint_pubkey)
             if not state:
                 await asyncio.sleep(5)
                 continue
                 
             current_price = state.get_price_sol()
+            if current_price > peak_price:
+                peak_price = current_price
+                
             profit_pct = ((current_price - entry_price) / entry_price) * 100
+            drop_from_peak = ((peak_price - current_price) / peak_price) * 100
             
-            if profit_pct >= CONFIG["take_profit_percent"]:
+            # 1. Take Profit
+            if profit_pct >= CONFIG.get("take_profit_percent", 50.0):
                 logging.info(f"🎯 TP REACHED: {profit_pct:.1f}% on {mint_address}")
+                break
+                
+            # 2. Trailing Stop Loss (New)
+            trailing_sl = CONFIG.get("trailing_stop_loss_percent", 5.0)
+            if profit_pct > 10.0 and drop_from_peak >= trailing_sl: # Only activate after 10% profit
+                logging.info(f"🛡️ TRAILING SL HIT: Peak {peak_price:.8f} -> Curr {current_price:.8f} (-{drop_from_peak:.1f}%)")
+                break
+
+            # 3. Standard Stop Loss
+            if profit_pct <= -CONFIG.get("stop_loss_percent", 20.0):
+                logging.info(f"📉 SL HIT: {profit_pct:.1f}% on {mint_address}")
+                break
+                
+            # 4. Emergency Exit: Dev rug detection (Checking creator balance)
+            # If dev sells > 50% of their holdings, we exit
+            try:
+                creator_ata = executor.impls.address_provider.derive_user_token_account(Pubkey.from_string(creator_address), mint_pubkey)
+                creator_bal_resp = await executor.client.get_token_account_balance(creator_ata)
+                if creator_bal_resp.value:
+                    bal = float(creator_bal_resp.value.ui_amount or 0)
+                    if bal == 0: # Dev dumped everything
+                        logging.warning(f"🚨 EMERGENCY: Creator dumped holdings for {mint_address}! Exiting...")
+                        break
+            except: 
+                pass # Account might not exist yet if they haven't bought or if they sold everything and closed account
+                
+            if state.complete:
+                logging.info(f"🏁 CURVE COMPLETE: {mint_address}")
+                break
                 break
                 
             if profit_pct <= -CONFIG["stop_loss_percent"]:
@@ -182,8 +257,15 @@ async def manage_position(executor: PumpFunExecutor, mint_address: str, creator_
             logging.error(f"Error managing position {mint_address}: {e}")
             await asyncio.sleep(10)
 
-    # Exit Position
-    sell_sig = await executor.sell_token(mint_address, creator_address)
+    # Exit Position with dynamic Jito tip
+    try:
+        state = await executor.get_bonding_curve_state(mint_pubkey)
+        progress = state.get_progress() if state else 0.0
+        tip = executor.calculate_dynamic_jito_tip(progress)
+    except:
+        tip = None
+
+    sell_sig = await executor.sell_token(mint_address, creator_address, tip=tip)
     if sell_sig:
         logging.info(f"✅ Position Closed: {mint_address} | Sig: {sell_sig}")
         # Capture fee tracking
@@ -223,6 +305,7 @@ async def manage_position(executor: PumpFunExecutor, mint_address: str, creator_
                 logging.error(f"Error recording trade: {e}")
     else:
         logging.error(f"❌ FAILED TO SELL: {mint_address}!")
+        await send_telegram_alert(f"❌ *SELL FAILED* for `{mint_address[:8]}`!")
 
 async def sniper_main():
     """Main lifecycle for the sniper bot."""
@@ -258,6 +341,14 @@ async def sniper_main():
                 token_queue.task_done()
                 continue
 
+            # Reload CONFIG to pick up dashboard changes
+            try:
+                with open("config.json", "r") as f:
+                    new_cfg = json.load(f)
+                    CONFIG.update(new_cfg)
+            except Exception as e:
+                logging.debug(f"Config reload failed: {e}")
+
             # Fallback for missing data
             if not mint or not creator:
                 token_data = await extract_token_data(executor.client, sig)
@@ -281,13 +372,16 @@ async def sniper_main():
                         continue
 
                     state = await executor.get_bonding_curve_state(Pubkey.from_string(mint))
+                    progress = state.get_progress() if state else 0.0
+                    tip = executor.calculate_dynamic_jito_tip(progress)
                     entry_price = state.get_price_sol() if state else 0.0
                     
-                    logging.info(f"💰 Snipping {mint}...")
-                    buy_sig = await executor.buy_token(mint, creator, CONFIG["buy_amount_sol"])
+                    logging.info(f"💰 Snipping {mint} (Progress: {progress:.1f}%, Tip: {tip} lamports)...")
+                    buy_sig = await executor.buy_token(mint, creator, CONFIG["buy_amount_sol"], tip=tip)
                     
                     if buy_sig:
                         logging.info(f"✅ Snipe execution successful: {buy_sig}")
+                        await send_telegram_alert(f"💰 *SNIPED* `{mint[:8]}` at `{entry_price:.8f} SOL`!")
                         # Record buy trade in DB
                         try:
                             await database.execute(trades_table.insert().values(

@@ -1,7 +1,9 @@
 # flow_filters.py
 import aiohttp
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
+from solana.rpc.async_api import AsyncClient
+from solders.pubkey import Pubkey
 
 BITQUERY_ENDPOINT = "https://streaming.bitquery.io/graphql"
 
@@ -185,3 +187,43 @@ async def should_snipe_signals(mint: str, cfg: dict) -> bool:
         logging.info(f"✨ Signal: {mint[:8]}... Has active LIVE STREAM")
         
     return True
+async def check_holder_concentration(mint: str, rpc_endpoint: str, threshold_pct: float = 25.0) -> bool:
+    """
+    Check if the top 10 holders (excluding the bonding curve) hold too much supply.
+    High concentration indicates a potential bundled launch (rug risk).
+    """
+    try:
+        async with AsyncClient(rpc_endpoint) as client:
+            mint_pubkey = Pubkey.from_string(mint)
+            resp = await client.get_token_largest_accounts(mint_pubkey)
+            if not resp.value or len(resp.value) < 2:
+                return True # Pass for very new tokens or errors to avoid false negatives
+
+            # Filter out the largest account (Bonding Curve holds ~98% at launch)
+            # We look at the rest of the top accounts
+            other_holders_total = 0
+            # Total supply for PumpFun tokens is 1 Billion
+            total_supply = 1_000_000_000_000_000 # 1B with 6 decimals? No, usually 6 decimals so 1B * 10^6
+            # Actually PumpFun tokens have 6 decimals.
+            # 1,000,000,000 * 1,000,000 = 10^15
+            
+            # The resp returns amounts in raw units (lamports/tokens with decimals)
+            # The largest account is index 0
+            top_holders = resp.value[1:11] # Next 10 largest
+            
+            for holder in top_holders:
+                other_holders_total += holder.amount.ui_amount or 0
+                
+            # Total supply for PumpFun is fixed at 1 Billion tokens
+            actual_total_supply = 1_000_000_000 
+            concentration = (other_holders_total / actual_total_supply) * 100
+            
+            if concentration > threshold_pct:
+                logging.info(f"Filter: {mint[:8]}... holder concentration {concentration:.1f}% > {threshold_pct}% (Rejected)")
+                return False
+                
+            logging.info(f"✅ Holder Concentration: {concentration:.1f}% (Safe)")
+            return True
+    except Exception as e:
+        logging.error(f"Holder Filter Error: {e}")
+        return True # Default to pass on error
