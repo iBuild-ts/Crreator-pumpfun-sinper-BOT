@@ -1,33 +1,80 @@
-version: '3.8'
+version: '3.9'
 
 services:
-  # The Sniper Bot Execution Worker
-  sniper_bot:
+  # --- The Brain: Redis (Swarm Bus & Cache) ---
+  redis:
+    image: redis:alpine
+    container_name: omega_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - omega_net
+
+  # --- The Vault: PostgreSQL (Data Lake) ---
+  postgres:
+    image: postgres:15-alpine
+    container_name: omega_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
+      POSTGRES_DB: ${POSTGRES_DB:-omega_lake}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d omega_lake"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - omega_net
+
+  # --- The Engine: Sniper Bot & Swarm Node ---
+  bot:
     build: .
-    command: python bot.py
+    container_name: omega_bot
+    restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - POSTGRES_URL=postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin}@postgres:5432/${POSTGRES_DB:-omega_lake}
+      - GEYSER_ENDPOINT=${GEYSER_ENDPOINT}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
     volumes:
       - .:/app
-    environment:
-      - RPC_ENDPOINT=${RPC_ENDPOINT}
-    restart: always
-    network_mode: host
+    networks:
+      - omega_net
 
-  # The Analytics & Control API
-  analytics_api:
+  # --- The Interface: API Server ---
+  api:
     build: .
+    container_name: omega_api
     command: uvicorn api:app --host 0.0.0.0 --port 8000
+    restart: always
     ports:
       - "8000:8000"
-    volumes:
-      - .:/app
-    restart: always
-    network_mode: host
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - POSTGRES_URL=postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin}@postgres:5432/${POSTGRES_DB:-omega_lake}
+    networks:
+      - omega_net
 
-  # The Ingestion Worker
-  token_worker:
-    build: .
-    command: python worker.py
-    volumes:
-      - .:/app
-    restart: always
-    network_mode: host
+volumes:
+  pg_data:
+
+networks:
+  omega_net:
+    driver: bridge
