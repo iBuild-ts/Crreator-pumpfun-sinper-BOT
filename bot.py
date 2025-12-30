@@ -28,6 +28,7 @@ from ml_engine import Oracle
 from db import database, get_creator_stats, get_token_analytics, trades as trades_table
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
+from geyser_client import GeyserStream
 import os
 
 PUMP_FUN_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
@@ -432,6 +433,17 @@ async def sniper_main():
         
         # Stage 13: Initialize Interactive Telegram Bot
         await init_telegram_bot()
+        
+        # Stage 15: Geyser Stream Integration
+        async def geyser_callback(data: dict):
+            """Handle fast updates from Geyser."""
+            # Parse simple structure, mock for now
+            # In prod this parses binary/json to find new mints
+            # logging.debug(f"⚡ Geyser Update: {data}")
+            pass
+
+        geyser = GeyserStream(callback=geyser_callback)
+        asyncio.create_task(geyser.connect())
 
         while True:
             candidate = await token_queue.get()
