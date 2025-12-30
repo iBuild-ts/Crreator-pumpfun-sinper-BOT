@@ -23,6 +23,7 @@ from flow_filters import (
 from signals import get_token_metadata, analyze_token_sentiment
 from copy_trader import WalletMonitor
 from analytics_engine import TradeRetrospective
+from ml_engine import Oracle
 from db import database, get_creator_stats, get_token_analytics, trades as trades_table
 
 PUMP_FUN_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
@@ -391,6 +392,16 @@ async def sniper_main():
                 await retrospective.auto_tune_strategy()
         asyncio.create_task(tuning_loop())
         
+        # Stage 12: Machine Learning Oracle
+        oracle = Oracle(database)
+        async def training_loop():
+            while True:
+                await asyncio.sleep(86400) # Train every 24 hours
+                # In a real scenario, we'd fetch df from DB
+                # await oracle.train_models(await fetch_all_trades_as_df())
+                logging.info("🧠 Oracle: Daily auto-training triggered (simulated).")
+        asyncio.create_task(training_loop())
+        
         while True:
             candidate = await token_queue.get()
             
@@ -444,6 +455,22 @@ async def sniper_main():
                         token_queue.task_done()
                         continue
                         
+                    # Stage 12: ML Oracle Prediction
+                    market_features = {
+                        "liquidity_locked": 100.0, # Placeholder, in prod would come from bitquery/sdk
+                        "top_10_holder_pct": 20.0,
+                        "creator_account_age_days": 5.0,
+                        "social_score": 10.0,
+                        "initial_buy_velocity": 50.0
+                    }
+                    prediction = await oracle.predict(market_features)
+                    logging.info(f"🔮 Oracle Verdict for {mint[:8]}: {prediction['oracle_verdict']} (Rug Prob: {prediction['rug_probability']:.2f})")
+                    
+                    if prediction["oracle_verdict"] == "HARD_REJECT":
+                         logging.warning(f"🛑 Oracle blocked snipe: High Rug Probability")
+                         token_queue.task_done()
+                         continue
+                         
                     state = await executor.get_bonding_curve_state(Pubkey.from_string(mint))
                     progress = state.get_progress() if state else 0.0
                     tip = executor.calculate_dynamic_jito_tip(progress)
