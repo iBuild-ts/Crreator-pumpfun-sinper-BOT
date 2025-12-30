@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  # The Sniper Bot Execution Worker
+  sniper_bot:
+    build: .
+    command: python bot.py
+    volumes:
+      - .:/app
+    environment:
+      - RPC_ENDPOINT=${RPC_ENDPOINT}
+    restart: always
+    network_mode: host
+
+  # The Analytics & Control API
+  analytics_api:
+    build: .
+    command: uvicorn api:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    restart: always
+    network_mode: host
+
+  # The Ingestion Worker
+  token_worker:
+    build: .
+    command: python worker.py
+    volumes:
+      - .:/app
+    restart: always
+    network_mode: host

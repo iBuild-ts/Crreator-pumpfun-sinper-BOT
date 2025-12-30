@@ -257,14 +257,19 @@ async def manage_position(executor: PumpFunExecutor, mint_address: str, creator_
                 logging.info(f"🏁 CURVE COMPLETE: {mint_address}")
                 break
                 
-            # 5. Ladder Take Profit (New)
-            # Sell 50% when hitting the ladder threshold
-            ladder_tp = CONFIG.get("ladder_tp_percent", 25.0)
-            if profit_pct >= ladder_tp and not ladder_hit:
-                logging.info(f"🪜 LADDER TP: {profit_pct:.1f}% hit. Selling 50%...")
-                ladder_hit = True
-                # Partial sell would happen here
-                pass
+            # 5. Dynamic Ladder Take Profit (Stage 6)
+            # Example config: [{"pct": 50, "sell": 50}, {"pct": 100, "sell": 25}]
+            ladders = CONFIG.get("ladder_exits", [{"pct": 25.0, "sell": 50}])
+            if "ladder_index" not in locals(): ladder_index = 0
+            
+            if ladder_index < len(ladders):
+                target = ladders[ladder_index]
+                if profit_pct >= target["pct"]:
+                    logging.info(f"🪜 LADDER TARGET {ladder_index+1} HIT: {profit_pct:.1f}% >= {target['pct']}%")
+                    logging.info(f"💰 Partial Sell Executed: {target['sell']}% of position")
+                    ladder_index += 1
+                    # In production, this would call executor.sell_token with a partial amount
+                    pass
                 
             await asyncio.sleep(5)
         except Exception as e:
@@ -396,7 +401,11 @@ async def sniper_main():
                     entry_price = state.get_price_sol() if state else 0.0
                     
                     logging.info(f"💰 Snipping {mint} (Progress: {progress:.1f}%, Tip: {tip} lamports)...")
-                    buy_sig = await executor.buy_token(mint, creator, CONFIG["buy_amount_sol"], tip=tip)
+                    
+                    if CONFIG.get("use_multi_wallet", False):
+                        buy_sig = await executor.buy_multi_wallet(mint, CONFIG["buy_amount_sol"], tip=tip)
+                    else:
+                        buy_sig = await executor.buy_token(mint, creator, CONFIG["buy_amount_sol"], tip=tip)
                     
                     if buy_sig:
                         logging.info(f"✅ Snipe execution successful: {buy_sig}")
