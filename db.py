@@ -40,6 +40,7 @@ tokens = Table(
     Column("has_live_stream", Boolean, default=False),
     Column("twitter_link", String, nullable=True),
     Column("telegram_link", String, nullable=True),
+    Column("social_pulse_score", Float, default=0.0), # Stage 8
     Column("status", String, default="active"), # active, rugged, graduated
 )
 
@@ -54,6 +55,7 @@ trades = Table(
     Column("price_usd", Float),
     Column("pnl_usd", Float, default=0.0),
     Column("timestamp", DateTime, default=datetime.utcnow),
+    Column("platform", String, default="pumpfun"), # pumpfun, raydium
     Column("tx_hash", String),
 )
 

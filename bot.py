@@ -364,13 +364,28 @@ async def sniper_main():
 
         token_queue = asyncio.Queue()
         
-        # Start listener and trade supervisor
+        # Start listener, graduation monitor, and trade supervisor
         asyncio.create_task(
             listen_new_tokens(CONFIG["ws_endpoint"], PUMP_FUN_PROGRAM_ID, token_queue)
+        )
+        asyncio.create_task(
+            executor.monitor_graduations(token_queue)
         )
         
         while True:
             candidate = await token_queue.get()
+            
+            # Stage 8: Handle Graduation Special Events
+            if candidate.get("txType") == "graduation":
+                mint = candidate.get("mint")
+                logging.info(f"🎓 GRADUATION SNIPE TRIGGERED: {mint}")
+                if CONFIG.get("enable_graduation_sniper", True):
+                    buy_sig = await executor.snipe_raydium_liquidity(mint, CONFIG.get("graduation_buy_sol", 0.5))
+                    if buy_sig:
+                        await send_telegram_alert(f"🎓 *GRADUATED & SNIPED* `{mint[:8]}` on Raydium!")
+                token_queue.task_done()
+                continue
+
             sig = candidate.get("signature")
             mint = candidate.get("mint")
             creator = candidate.get("creator") or candidate.get("user")

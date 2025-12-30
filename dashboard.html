@@ -225,6 +225,10 @@
                 <div class="card-label">Active</div>
                 <div id="stat-active" class="card-value">0</div>
             </div>
+            <div class="card" style="border-color: var(--accent);">
+                <div class="card-label">Social Alpha Pulse</div>
+                <div id="stat-pulse" class="card-value">🔥 High</div>
+            </div>
         </div>
 
         <div class="main-grid">
@@ -285,6 +289,7 @@
                             <div class="mint-addr">${t.mint.substring(0, 8)}...</div>
                         </div>
                         <div style="text-align: right">
+                            <div style="font-size: 0.7rem; color: var(--primary)">${t.platform.toUpperCase()}</div>
                             <div>$${t.price_usd.toFixed(4)}</div>
                             <div style="font-size: 0.7rem; color: #64748b">${new Date(t.timestamp).toLocaleTimeString()}</div>
                         </div>

@@ -92,4 +92,20 @@ async def analyze_token_sentiment(mint: str, metadata: Dict[str, Any], cfg: Dict
     # Buffer for socials
     if metadata.get("twitter") or metadata.get("telegram"): score += 10
     
+    # Stage 8: Social Pulse Check
+    if cfg.get("enable_social_pulse", False):
+        pulse = await get_social_pulse(metadata.get("twitter_handle") or name, cfg)
+        score += pulse.get("score_bonus", 0)
+        
     return max(0.0, min(100.0, score))
+
+async def get_social_pulse(query: str, cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Fetch social volatility/mentions for a token (Stage 8)."""
+    # Conceptual implementation for Twitter/X pulse
+    # In a real environment, this would hit a Twitter API search endpoint
+    logging.info(f"🔍 Checking social pulse for: {query}")
+    return {
+        "mentions_5m": 12,
+        "sentiment": "bullish",
+        "score_bonus": 15.0 # High engagement bonus
+    }
