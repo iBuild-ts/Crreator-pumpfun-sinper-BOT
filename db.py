@@ -72,6 +72,27 @@ trades_stats = Table(
     Column("sell_volume_usd", Float),
 )
 
+tracked_wallets = Table(
+    "tracked_wallets",
+    metadata,
+    Column("address", String, primary_key=True),
+    Column("label", String),
+    Column("copy_trade_enabled", Boolean, default=True),
+    Column("last_active", DateTime, default=datetime.utcnow),
+)
+
+whale_activity = Table(
+    "whale_activity",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("wallet_address", String, ForeignKey("tracked_wallets.address")),
+    Column("mint", String),
+    Column("side", String),
+    Column("amount_sol", Float),
+    Column("timestamp", DateTime, default=datetime.utcnow),
+    Column("tx_hash", String),
+)
+
 # Sync engine for table creation
 engine = create_engine(
     DATABASE_URL.replace("sqlite+aiosqlite://", "sqlite://") if DATABASE_URL.startswith("sqlite") else DATABASE_URL

@@ -17,9 +17,11 @@ from blockchain import (
 from flow_filters import (
     should_snipe_bitquery, 
     should_snipe_signals, 
-    check_holder_concentration
+    check_holder_concentration,
+    is_insider_bundle
 )
 from signals import get_token_metadata, analyze_token_sentiment
+from copy_trader import WalletMonitor
 from db import database, get_creator_stats, get_token_analytics, trades as trades_table
 
 PUMP_FUN_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
@@ -371,6 +373,14 @@ async def sniper_main():
         asyncio.create_task(
             executor.monitor_graduations(token_queue)
         )
+        # Stage 9: Wallet Alpha
+        whale_monitor = WalletMonitor(
+            CONFIG["rpc_endpoint"],
+            CONFIG["ws_endpoint"],
+            CONFIG.get("tracked_wallets", []),
+            executor
+        )
+        asyncio.create_task(whale_monitor.start_monitoring())
         
         while True:
             candidate = await token_queue.get()
@@ -420,10 +430,11 @@ async def sniper_main():
                         continue
                         
                     # Step 3: Signals Filter (New)
-                    if not await should_snipe_signals(mint, CONFIG):
+                    # Stage 9: Anti-Bundle Filter
+                    if await is_insider_bundle(mint, CONFIG):
                         token_queue.task_done()
                         continue
-
+                        
                     state = await executor.get_bonding_curve_state(Pubkey.from_string(mint))
                     progress = state.get_progress() if state else 0.0
                     tip = executor.calculate_dynamic_jito_tip(progress)

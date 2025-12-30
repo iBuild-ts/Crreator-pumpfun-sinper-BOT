@@ -1,7 +1,7 @@
 # api.py
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from db import database, tokens, creators, trades
+from db import database, tokens, creators, trades, tracked_wallets, whale_activity
 from datetime import datetime, timedelta
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -197,6 +197,18 @@ async def update_config(new_config: Dict):
         return {"status": "success", "config": current_config}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/whales")
+async def get_whales():
+    """Fetch tracked whale wallets and their status."""
+    query = tracked_wallets.select()
+    return await database.fetch_all(query)
+
+@app.get("/whale-activity")
+async def get_whale_activity(limit: int = 50):
+    """Fetch recent trades made by tracked whales."""
+    query = whale_activity.select().order_by(whale_activity.c.timestamp.desc()).limit(limit)
+    return await database.fetch_all(query)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

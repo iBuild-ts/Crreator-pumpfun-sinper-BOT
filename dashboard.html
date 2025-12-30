@@ -249,6 +249,22 @@
                 </div>
             </div>
         </div>
+
+        <!-- Stage 9: Whale Hub -->
+        <div class="card" style="margin-top: 2rem; border-color: var(--secondary);">
+            <div class="card-label" style="display: flex; justify-content: space-between;">
+                <span>🐋 Whale Hub - Tracked Alpha Wallets</span>
+                <span id="stat-whale-count">0 tracking</span>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 1.5rem; margin-top: 1rem;">
+                <div id="tracked-wallets-list" class="trades-list" style="max-height: 300px;">
+                    <!-- Tracked Wallets list -->
+                </div>
+                <div id="whale-activity-feed" class="trades-list" style="max-height: 300px;">
+                    <!-- Recent Whale Activity -->
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -430,17 +446,43 @@
             } catch (e) { console.error('Chart update failed', e); }
         }
 
+        async function updateWhaleData() {
+            try {
+                const resp = await fetch(`${API_BASE}/whales`);
+                const whales = await resp.json();
+                document.getElementById('stat-whale-count').textContent = `${whales.length} tracking`;
+                // Build simple list...
+                
+                const activityResp = await fetch(`${API_BASE}/whale-activity`);
+                const activity = await activityResp.json();
+                const feed = document.getElementById('whale-activity-feed');
+                feed.innerHTML = '';
+                activity.forEach(a => {
+                    const item = document.createElement('div');
+                    item.className = 'trade-item';
+                    item.innerHTML = `
+                        <div style="color: var(--accent)">🐋 ${a.wallet_address.substring(0,6)}...</div>
+                        <div>${a.side.toUpperCase()} ${a.mint.substring(0,8)}</div>
+                        <div style="color: #64748b">${new Date(a.timestamp).toLocaleTimeString()}</div>
+                    `;
+                    feed.appendChild(item);
+                });
+            } catch (e) { console.error('Whale data fetch failed', e); }
+        }
+
         setInterval(() => {
             updateStats();
             updateTrades();
             updateLogs();
             updateChart();
+            updateWhaleData();
         }, 5000);
 
         updateStats();
         updateTrades();
         updateLogs();
         updateChart();
+        updateWhaleData();
     </script>
 </body>
 
