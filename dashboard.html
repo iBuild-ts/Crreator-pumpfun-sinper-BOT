@@ -190,6 +190,21 @@
                     <input type="number" id="cfg-sl"
                         style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; padding: 0.5rem; border-radius: 8px;">
                 </div>
+                <div>
+                    <label style="display: block; font-size: 0.75rem; color: #94a3b8;">Min AI Score</label>
+                    <input type="number" id="cfg-ai-score"
+                        style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; padding: 0.5rem; border-radius: 8px;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.75rem; color: #94a3b8;">Ladder TP (%)</label>
+                    <input type="number" id="cfg-ladder-tp"
+                        style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; padding: 0.5rem; border-radius: 8px;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.75rem; color: #94a3b8;">Profit Skim (SOL)</label>
+                    <input type="number" id="cfg-skim" step="0.01"
+                        style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; padding: 0.5rem; border-radius: 8px;">
+                </div>
             </div>
         </div>
 
@@ -324,7 +339,7 @@
                 const data = await resp.json();
                 const container = document.getElementById('logs-container');
                 container.innerHTML = '';
-                
+
                 data.logs.forEach(log => {
                     const entry = document.createElement('div');
                     entry.className = 'log-entry';
@@ -349,6 +364,9 @@
                 document.getElementById('cfg-slippage').value = cfg.max_slippage_bps;
                 document.getElementById('cfg-tp').value = cfg.take_profit_percent;
                 document.getElementById('cfg-sl').value = cfg.stop_loss_percent;
+                document.getElementById('cfg-ai-score').value = cfg.min_ai_score || 40;
+                document.getElementById('cfg-ladder-tp').value = cfg.ladder_tp_percent || 25;
+                document.getElementById('cfg-skim').value = cfg.fixed_skim_sol || 0.05;
             } catch (e) { console.error('Load settings failed', e); }
         }
 
@@ -357,7 +375,10 @@
                 buy_amount_sol: parseFloat(document.getElementById('cfg-buy-amount').value),
                 max_slippage_bps: parseInt(document.getElementById('cfg-slippage').value),
                 take_profit_percent: parseFloat(document.getElementById('cfg-tp').value),
-                stop_loss_percent: parseFloat(document.getElementById('cfg-sl').value)
+                stop_loss_percent: parseFloat(document.getElementById('cfg-sl').value),
+                min_ai_score: parseFloat(document.getElementById('cfg-ai-score').value),
+                ladder_tp_percent: parseFloat(document.getElementById('cfg-ladder-tp').value),
+                fixed_skim_sol: parseFloat(document.getElementById('cfg-skim').value)
             };
             try {
                 const resp = await fetch(`${API_BASE}/config`, {
@@ -369,15 +390,52 @@
             } catch (e) { console.error('Save settings failed', e); }
         }
 
+        async function updateChart() {
+            try {
+                const resp = await fetch(`${API_BASE}/roi`);
+                const data = await resp.json();
+
+                const labels = data.map(d => new Date(d.timestamp).toLocaleTimeString());
+                const points = data.map(d => d.pnl);
+
+                if (pnlChart) pnlChart.destroy();
+                const ctx = document.getElementById('pnlChart').getContext('2d');
+                pnlChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Cumulative P&L ($)',
+                            data: points,
+                            borderColor: '#8b5cf6',
+                            backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+                            x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+                        }
+                    }
+                });
+            } catch (e) { console.error('Chart update failed', e); }
+        }
+
         setInterval(() => {
             updateStats();
             updateTrades();
             updateLogs();
+            updateChart();
         }, 5000);
 
         updateStats();
         updateTrades();
         updateLogs();
+        updateChart();
     </script>
 </body>
 

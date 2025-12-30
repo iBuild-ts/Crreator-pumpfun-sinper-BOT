@@ -137,6 +137,22 @@ async def get_stats():
         active_positions=active_count
     )
 
+@app.get("/roi")
+async def get_roi_history():
+    """Fetch cumulative profit history for charting."""
+    query = trades.select().where(trades.c.side == 'sell').order_by(trades.c.timestamp.asc())
+    rows = await database.fetch_all(query)
+    
+    cumulative = 0
+    history = []
+    for row in rows:
+        cumulative += (row['pnl_usd'] or 0.0)
+        history.append({
+            "timestamp": row['timestamp'].isoformat(),
+            "pnl": cumulative
+        })
+    return history
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "db": database.is_connected}

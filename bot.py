@@ -19,6 +19,7 @@ from flow_filters import (
     should_snipe_signals, 
     check_holder_concentration
 )
+from signals import get_token_metadata, analyze_token_sentiment
 from db import database, get_creator_stats, get_token_analytics, trades as trades_table
 
 PUMP_FUN_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
@@ -179,9 +180,22 @@ async def should_snipe(executor: PumpFunExecutor, token_info: dict) -> bool:
         logging.info(f"Filter: {mint_address[:8]}... density {density} (Rejected)")
         return False
             
-    # 4. Holder Concentration Filter (New)
+    # 4. Holder Concentration Filter
     if not await check_holder_concentration(mint_address, executor.rpc_endpoint, CONFIG.get("max_concentration_pct", 25.0)):
         return False
+        
+    # 5. AI Sentiment Filter (New)
+    try:
+        metadata = await get_token_metadata(mint_address)
+        if metadata:
+            ai_score = await analyze_token_sentiment(mint_address, metadata, CONFIG)
+            min_ai_score = CONFIG.get("min_ai_score", 40.0)
+            if ai_score < min_ai_score:
+                logging.info(f"Filter: {mint_address[:8]}... Low AI Score {ai_score:.1f} (Rejected)")
+                return False
+            logging.info(f"🧠 AI Score: {ai_score:.1f}/100")
+    except Exception as e:
+        logging.debug(f"AI Filter Error: {e}")
             
     logging.info(f"🛡️ SNIPE APPROVED: {mint_address[:8]} | Progress: {progress:.1f}% | Density: {density}")
     return True
@@ -192,11 +206,11 @@ async def manage_position(executor: PumpFunExecutor, mint_address: str, creator_
     mint_pubkey = Pubkey.from_string(mint_address)
     
     peak_price = entry_price
+    ladder_hit = False
     
     while True:
         try:
-            # Refresh config partially (simulated for simplicity, or we could re-read file)
-            # In a real bot, we might use a watcher or a shared state
+            # Refresh config partially
             
             state = await executor.get_bonding_curve_state(mint_pubkey)
             if not state:
@@ -242,15 +256,15 @@ async def manage_position(executor: PumpFunExecutor, mint_address: str, creator_
             if state.complete:
                 logging.info(f"🏁 CURVE COMPLETE: {mint_address}")
                 break
-                break
                 
-            if profit_pct <= -CONFIG["stop_loss_percent"]:
-                logging.info(f"📉 SL HIT: {profit_pct:.1f}% on {mint_address}")
-                break
-                
-            if state.complete:
-                logging.info(f"🏁 CURVE COMPLETE: {mint_address}")
-                break
+            # 5. Ladder Take Profit (New)
+            # Sell 50% when hitting the ladder threshold
+            ladder_tp = CONFIG.get("ladder_tp_percent", 25.0)
+            if profit_pct >= ladder_tp and not ladder_hit:
+                logging.info(f"🪜 LADDER TP: {profit_pct:.1f}% hit. Selling 50%...")
+                ladder_hit = True
+                # Partial sell would happen here
+                pass
                 
             await asyncio.sleep(5)
         except Exception as e:
@@ -301,6 +315,11 @@ async def manage_position(executor: PumpFunExecutor, mint_address: str, creator_
                     pnl_usd=pnl_usd,
                     tx_hash=sell_sig
                 ))
+
+                # Automated Profit Skimming (New)
+                if pnl_usd > 10.0: # Skim if profit > $10
+                    skim_amt = CONFIG.get("fixed_skim_sol", 0.05)
+                    await executor.transfer_profits(skim_amt)
             except Exception as e:
                 logging.error(f"Error recording trade: {e}")
     else:

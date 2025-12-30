@@ -418,6 +418,34 @@ class PumpFunExecutor:
         except Exception as e:
             logging.error(f"Failed to send Jito bundle: {e}")
             return None
+    async def transfer_profits(self, amount_sol: float) -> Optional[str]:
+        """Transfer profits to a separate wallet."""
+        profit_wallet = self.cfg.get("profit_wallet")
+        if not profit_wallet:
+            logging.info("Profit skimming skipped: no profit_wallet configured.")
+            return None
+            
+        try:
+            from solana.system_program import TransferParams, transfer as transfer_ix
+            amount_lamports = int(amount_sol * 1e9)
+            
+            ix = transfer_ix(
+                TransferParams(
+                    from_pubkey=self.wallet.pubkey(),
+                    to_pubkey=Pubkey.from_string(profit_wallet),
+                    lamports=amount_lamports
+                )
+            )
+            
+            tx = Transaction()
+            tx.add(ix)
+            tx.fee_payer = self.wallet.pubkey()
+            
+            logging.info(f"💰 Skimming {amount_sol:.4f} SOL profit to {profit_wallet[:8]}...")
+            return await self.simulate_and_send(self.client, tx, [self.wallet])
+        except Exception as e:
+            logging.error(f"Profit transfer failed: {e}")
+            return None
 
 
 # Consolidated logic into PumpFunExecutor. Standalone helper functions removed.
