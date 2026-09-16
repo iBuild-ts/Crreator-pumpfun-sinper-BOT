@@ -181,7 +181,7 @@ To make this production-ready:
 5. **Optimize for speed** - Use Jito bundles for 0-block latency
 6. **Add stop-loss** - Auto-sell if price drops X%
 
-## 🆘 Need Help?
+## 🆘 Need Help???
 
 Check the logs in `trades.log` for detailed error messages. Each transaction is logged with:
 - Timestamp
